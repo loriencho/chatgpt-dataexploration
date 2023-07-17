@@ -1,4 +1,8 @@
 from dependencies import *
+from langchain.schema import(
+        AIMessage,
+        HumanMessage,
+        SystemMessage)
 
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN").strip()
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN").strip()
@@ -8,6 +12,7 @@ app = App(token=SLACK_BOT_TOKEN)
 # format data into a table (string)
 csv_file_path = "IRIS.csv"
 df = pd.read_csv(csv_file_path)
+csv = open(csv_file_path, "r").read()
 table = tabulate(df, headers='keys', tablefmt='psql')
 
 
@@ -23,14 +28,14 @@ def create_chat_model():
     """
 
     chat = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
-    memory = ConversationBufferMemory()
-    
-    memory.save_context(
-            {"input":table}, {"output":chat.predict(table)})
-    
-    conversation = ConversationChain(
-            llm=chat, verbose=False, memory=memory) 
-    return conversation
+    return chat
+
+def query_chat_model(chat, query):
+    messages = [
+            SystemMessage(content=
+                f"Answer questions about the following data: {csv}"),
+            HumanMessage(content=query)]
+    return chat(messages).content
 
 def create_retrievalqa(csv_file_path):
     """
@@ -54,14 +59,15 @@ def create_retrievalqa(csv_file_path):
 ####
 
 agent = create_pandas_agent() 
-# conversation = create_chat_model() hits token limit
+chat = create_chat_model()
 qa = create_retrievalqa(csv_file_path)
 
 @app.command("/chatprompt")
 def bot_prompt(ack: Ack, respond: Respond, command: dict, client: WebClient):
     ack()
     prompt = command["text"]
-    respond(f"You asked: {prompt} \n\n You received: not working yet")
+    result = query_chat_model(chat, prompt)
+    respond(f"You asked: {prompt} \n\n You received: {result}")
 
 @app.command("/agentprompt")
 def bot_prompt(ack: Ack, respond: Respond, command: dict, client: WebClient):
