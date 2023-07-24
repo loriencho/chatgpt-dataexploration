@@ -1,15 +1,18 @@
 import os
 from tabulate import tabulate
+import asyncio
 
 ####
 # Slackbot Imports
 ####
 import slack_sdk as slack
 from slack_sdk import WebClient
+from slack_sdk.web.async_client import AsyncWebClient
 
 from slack_bolt import App, Ack, Respond
+from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-
+from slack_bolt.adapter.socket_mode.aiohttp import AsyncSocketModeHandler
 
 ####
 # LangChain Imports
@@ -25,6 +28,11 @@ from langchain.agents.agent_types import AgentType
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
+from langchain.prompts.prompt import PromptTemplate
+from langchain.schema import(
+        AIMessage,
+        HumanMessage,
+        SystemMessage)
 
 # Use RetrievalQA Chain with chunking
 from langchain.chains import RetrievalQA
