@@ -3,28 +3,18 @@ from dependencies import *
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN").strip()
 SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN").strip()
 
-app = AsyncApp(token=SLACK_BOT_TOKEN)
+app = App(token=SLACK_BOT_TOKEN)
 
 # format data into a table (string)
-csv_file_path = "IRIS.csv"
-df = pd.read_csv(csv_file_path)
-csv = open(csv_file_path, "r").read()
-table = tabulate(df, headers='keys', tablefmt='psql')
 
+global df, csv
+csv = None
+df = pd.DataFrame()
 
-def create_pandas_agent():
+def create_pandas_agent(df):
+
     llm = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
-    return create_pandas_dataframe_agent(llm, df, verbose=False, 
-            agent_type=AgentType.OPENAI_FUNCTIONS)
-
-def create_chat_model():
-    """
-        Sends context (the data) to ChatGPT
-        Currently does not work because of token limit
-    """
-
-    chat = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
-    return chat
+    return create_pandas_dataframe_agent(llm, df, verbose=True)
 
 def query_chat_model(chat, query):
     messages = [
@@ -33,22 +23,27 @@ def query_chat_model(chat, query):
             HumanMessage(content=query)]
     return chat(messages).content
 
-def create_retrievalqa(csv_file_path):
-    """
-        Uses the RetrievalQA chain for a chunking based approach
-    """
-    documents = CSVLoader(csv_file_path).load()
-    text_splitter = CharacterTextSplitter(
-           chunk_size=1000, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-    docsearch = Chroma.from_documents(texts, OpenAIEmbeddings())
+"""
+def create_retrievalqa(csv):
+    
+    #    Uses the RetrievalQA chain for a chunking based approach
+    
+
+    text_splitter = CharacterTextSplitter(chunk_size=100, chunk_overlap=0)
+    texts = text_splitter.split_text(csv)
+    documents = text_splitter.create_documents(texts)
+    docsearch = Chroma.from_documents(documents, OpenAIEmbeddings())
 
     llm = ChatOpenAI(temperature = 0, model="gpt-3.5-turbo-0613")
 
     qa = RetrievalQA.from_chain_type(
-            llm=llm, chain_type="stuff", 
+            llm=llm, chain_type="stuff",
+            reduce_k_below_max_tokens=True,
             retriever=docsearch.as_retriever())
+
+
     return qa
+"""
 
 def query_python_model(model, messages):
     if (len(messages) == 0):
@@ -67,79 +62,140 @@ Human: {input}
 AI:"""
 
 PROMPT = PromptTemplate(input_variables=["history", "input"], template=template)
-model = create_chat_model()
+model = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
 chain = ConversationChain(
         prompt=PROMPT,
         llm=model, 
         verbose=True, 
         memory=ConversationBufferMemory())
 
-user_input = input()
-output = ""
-
-while user_input != "exit":
-    #messages.append(HumanMessage(content=user_input))
-    #print(query_python_model(model, messages).content)
-    
-    if (user_input == "run"):
-        output_aftercode = output.split('```python')[1]
-
-        output_code = output_aftercode.split('```')[0]
-            
-        run = input(f"Run code: \n{output_code}\n? ")
-        if (run=="y"):
-            exec(output_code)
-
-    else:
-        output = chain.predict(input=user_input)
-
-        print(output)
-    print("Awaiting input: ")
-    user_input = input()
-
-
 ####
 # SLACKBOT APP
 ####
 
-agent = create_pandas_agent() 
-chat = create_chat_model()
-qa = create_retrievalqa(csv_file_path)
+global agent, chat, qa
+agent = None 
+chat = ChatOpenAI(temperature=0, model="gpt-3.5-turbo-0613")
+qa = None
+
+global output
+output = ""
+
+
+@app.command("/csv")
+def bot_prompt(ack: Ack, respond : Respond, command : dict, client: WebClient):
+    global csv, df, agent, qa
+    ack()
+    
+    last_message = client.conversations_history(channel=command["channel_id"])["messages"][0]
+
+    if ("files" not in last_message or len(last_message["files"])==0):
+        respond("No file upload in last message")
+        return
+    
+
+    try:
+        uploaded =  last_message["files"][0]
+        url = uploaded["url_private"]
+        name = uploaded["name"]
+        res = requests.get(url, headers={'Authorization': 'Bearer %s' % SLACK_BOT_TOKEN})
+        
+        
+        res.raise_for_status()
+        csv = res.content
+
+        df = pd.read_csv(BytesIO(csv))
+        agent = create_pandas_agent(df)
+       #  qa = create_retrievalqa(res.text)
+    
+        respond(f"Successfully read CSV file {name}")
+    except:
+        respond(f"Error reading CSV file")
+
+@app.command("/say")
+def bot_prompt(ack: Ack, respond : Respond, command: dict, client: WebClient):
+    global output
+    ack()
+
+    if csv == None:
+        respond("Please set a csv file.")
+
+    prompt = command["text"]
+    output = chain.predict(input=prompt)
+
+    respond(output) 
+
+@app.command("/run")
+def bot_prompt(ack: Ack, respond : Respond, command:dict, client : WebClient):
+    global output, df
+    ack()
+    
+    if df.empty:
+        respond("No file uploaded yet")
+        return
+
+    split = output.split('```python')
+    if len(split) <= 1:
+        respond(f"No python code generated")
+        return 
+    output_aftercode = split[1]
+    output_code = output_aftercode.split('```')[0]
+            
+    from io import StringIO
+    import sys
+
+    tmp = sys.stdout
+    output = StringIO()
+    sys.stdout = output
+    try:
+        exec(output_code)
+    except:
+        respond("There was an error running the code.")
+    sys.stdout = tmp
+    
+    respond(f"Output: \n{output.getvalue()}")
 
 @app.command("/chatprompt")
-async def bot_prompt(ack: Ack, respond: Respond, command: dict, client: AsyncWebClient):
-    await ack()
-    prompt = command["text"]
-    result = query_chat_model(chat, prompt)
-    await respond(f"You asked: {prompt} \n\n You received: {result}")
-    
+def bot_prompt(ack: Ack, respond: Respond, command: dict, client: WebClient):
+    ack()
+
+    if csv != None:
+        prompt = command["text"]
+        result = query_chat_model(chat, prompt)
+        respond(f"You asked: {prompt} \n\n You received: {result}")
+    else:
+        respond("Please set a csv file.")
 
 @app.command("/agentprompt")
-async def bot_prompt(ack: Ack, respond: Respond, command: dict, client: AsyncWebClient):
-    await ack()
-    prompt = command["text"]
-    result = agent.run(prompt)
+def bot_prompt(ack: Ack, respond: Respond, command: dict, client: WebClient):
+    ack()
 
-    await respond(f"You asked: {prompt} \n\n You received: {result}")
     
+    if agent:
+        prompt = command["text"]
+        result = agent.run(prompt)
 
+
+        respond(f"You asked: {prompt} \n\n You received: {result}")
+    else:
+        respond("Please set a csv file.")
+"""
 @app.command("/retrievalqaprompt")
-async def bot_prompt(ack: Ack, respond: Respond, command: dict, client: AsyncWebClient):
-    await ack()
-    prompt = command["text"]
-    result = qa.run(prompt)
+def bot_prompt(ack: Ack, respond: Respond, command: dict, client: WebClient):
+    ack()
 
-    await respond(f"You asked: {prompt} \n\n You received: {result}")
+    if qa:
+        prompt = command["text"]
+        result = qa.run(prompt)
 
+        respond(f"You asked: {prompt} \n\n You received: {result}")
+    else:
+        respond("Please set a csv file.")
+"""
 
-async def main():
-    handler = AsyncSocketModeHandler(app, SLACK_APP_TOKEN) 
-    try:
-        await handler.start_async()
-    except:
-        await handler.disconnect_async()
-        await handler.close_async()
-
-asyncio.run(main())
+def main():
+    handler = SocketModeHandler(app, SLACK_APP_TOKEN).start()
 
 
+
+main()
