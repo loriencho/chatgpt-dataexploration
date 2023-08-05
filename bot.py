@@ -40,7 +40,7 @@ def bot_prompt(ack: Ack, respond : Respond, command : dict, client: WebClient):
     
     last_message = client.conversations_history(channel=command["channel_id"])["messages"][0]
     if ("files" not in last_message or len(last_message["files"])==0):
-        respond("No file upload in last message")
+        client.chat_postMessage(text="No file upload in last message", channel=command["channel_id"])
         return
 
     try:
@@ -52,7 +52,7 @@ def bot_prompt(ack: Ack, respond : Respond, command : dict, client: WebClient):
                 uploaded = files[i]
         
         if uploaded == None:
-            respond(f"File {name} not found")
+            client.chat_postMessage(text=f"File {name} not found", channel=command["channel_id"])
             return
                 
         url = uploaded["url_private"]
@@ -62,11 +62,11 @@ def bot_prompt(ack: Ack, respond : Respond, command : dict, client: WebClient):
         csv = res.content
 
         df = pd.read_csv(BytesIO(csv))  
-        respond(f"Successfully read CSV file {name}")
+        client.chat_postMessage(text=f"Successfully read CSV file {name}", channel=command["channel_id"])
 
         memory.clear()
     except:
-        respond(f"Error reading CSV file")
+        client.chat_postMessage(text=f"Error reading CSV file", channel=command["channel_id"])
 
 @app.command("/say")
 def bot_prompt(ack: Ack, respond : Respond, command: dict, client: WebClient):
@@ -74,12 +74,12 @@ def bot_prompt(ack: Ack, respond : Respond, command: dict, client: WebClient):
     ack()
 
     if csv == None:
-        respond("Please set a csv file.")
+        client.chat_postMessage(text="Please set a csv file.", channel=command["channel_id"])
 
     prompt = command["text"]
     output = chain.predict(input=prompt)
 
-    respond(f"You said: {prompt}\n Response: {output}") 
+    client.chat_postMessage(text=f"You said: {prompt}\n Response: {output}", channel=command["channel_id"]) 
 
 @app.command("/clear")
 def bot_prompt(ack: Ack, respond: Respond, command:dict, client: WebClient):
@@ -87,7 +87,7 @@ def bot_prompt(ack: Ack, respond: Respond, command:dict, client: WebClient):
     memory.clear()
     csv = None
     df = pd.DataFrame()
-    respond("Memory and csv cleared")
+    client.chat_postMessage(text="Memory and csv cleared", channel=command["channel_id"])
 
 @app.command("/run")
 def bot_prompt(ack: Ack, respond : Respond, command:dict, client : WebClient):
@@ -95,12 +95,12 @@ def bot_prompt(ack: Ack, respond : Respond, command:dict, client : WebClient):
     ack()
     
     if df.empty:
-        respond("No file uploaded yet")
+        client.chat_postMessage(text="No file uploaded yet", channel=command["channel_id"])
         return
 
     split = output.split('```python')
     if len(split) <= 1:
-        respond(f"No python code generated")
+        client.chat_postMessage(text=f"No python code generated", channel=command["channel_id"])
         return 
     output_aftercode = split[1]
     output_code = output_aftercode.split('```')[0]
@@ -112,11 +112,12 @@ def bot_prompt(ack: Ack, respond : Respond, command:dict, client : WebClient):
     try:
         exec(output_code)
     except Exception as error:
-        respond(f"There was an error running the code: \n {type(error).__name__}")
+        client.chat_postMessage(
+                text=f"There was an error running the code: \n {type(error).__name__}", channel=command["channel_id"])
         return
     sys.stdout = tmp
     
-    respond(f"Output: \n{output.getvalue()}")
+    client.chat_postMessage(text=f"Output: \n{output.getvalue()}",channel=command["channel_id"])
 
 
 def main():
