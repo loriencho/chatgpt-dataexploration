@@ -1,5 +1,7 @@
 import os
 import sys
+import psutil 
+
 from tabulate import tabulate
 import asyncio
 import datetime
