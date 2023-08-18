@@ -35,7 +35,7 @@ from langchain.agents.agent_types import AgentType
 # Use ChatGPT conversationally with context (data)
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationChain
-from langchain.memory import ConversationBufferMemory
+from langchain.memory import ConversationBufferWindowMemory
 from langchain.prompts.prompt import PromptTemplate
 from langchain.schema import(
         AIMessage,
