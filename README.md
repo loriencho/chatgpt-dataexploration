@@ -1,4 +1,4 @@
-# Chat GPT Data Exploration Slackbot
+# Guide
 Upload and set csv files, say things to ChatGPT, and run code. Clear memory and/or uploaded csvs  and check system info if neccessary
 
 ## Uploading CSV Files
